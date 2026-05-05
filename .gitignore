@@ -32,6 +32,7 @@ Thumbs.db
 # Build output
 release/
 vps-monitor-release.tar.gz
+dist/
 
 # Superpowers/brainstorm
 .superpowers/

@@ -1,29 +1,48 @@
-.PHONY: all server agent clean
+.PHONY: all server agent clean deps run-server run-agent release
 
-# 构建
+# 构建目标
 all: server agent
 
 server:
-	cd vps-monitor && go build -o bin/vps-monitor-server ./cmd/server
+	GOOS=$(shell go env GOOS) GOARCH=$(shell go env GOARCH) go build -o bin/vps-monitor-server ./cmd/server
 
 agent:
-	cd vps-monitor && go build -o bin/vps-agent ./cmd/agent
+	GOOS=$(shell go env GOOS) GOARCH=$(shell go env GOARCH) go build -o bin/vps-agent ./cmd/agent
 
 # 清理
 clean:
-	rm -rf vps-monitor/bin/
+	rm -rf bin/ dist/
 
 # 安装依赖
 deps:
-	cd vps-monitor && go mod tidy
+	go mod tidy
 
 # 测试运行
 run-server:
-	cd vps-monitor && ./bin/vps-monitor-server -port 8080 -tokens "test-token-123"
+	./bin/vps-monitor-server -port 8080 -tokens "test-token-123"
 
 run-agent:
-	cd vps-monitor && ./bin/vps-agent -server http://localhost:8080 -token test-token-123
+	./bin/vps-agent -server http://localhost:8080 -token test-token-123
 
-# 打包静态资源（可选）
-embed:
-	cd vps-monitor && go build -tags embed -o bin/vps-monitor-server ./cmd/server
+# 交叉编译 + 打包 release
+# 支持的平台
+PLATFORMS := linux-amd64 linux-arm64 darwin-arm64
+
+release: clean $(PLATFORMS)
+
+$(PLATFORMS):
+	$(eval OS=$(firstword $(subst -, ,$@)))
+	$(eval ARCH=$(lastword $(subst -, ,$@)))
+	@echo "Building for $(OS)/$(ARCH)..."
+	@mkdir -p dist/vps-monitor-$(OS)-$(ARCH)/bin
+	@mkdir -p dist/vps-monitor-$(OS)-$(ARCH)/config
+	@mkdir -p dist/vps-monitor-$(OS)-$(ARCH)/scripts/systemd
+	GOOS=$(OS) GOARCH=$(ARCH) go build -o dist/vps-monitor-$(OS)-$(ARCH)/bin/vps-monitor-server ./cmd/server
+	GOOS=$(OS) GOARCH=$(ARCH) go build -o dist/vps-monitor-$(OS)-$(ARCH)/bin/vps-agent ./cmd/agent
+	@cp configs/server.yaml dist/vps-monitor-$(OS)-$(ARCH)/config/
+	@cp configs/agent.yaml dist/vps-monitor-$(OS)-$(ARCH)/config/
+	@cp scripts/install.sh dist/vps-monitor-$(OS)-$(ARCH)/scripts/
+	@cp scripts/systemd/*.service dist/vps-monitor-$(OS)-$(ARCH)/scripts/systemd/
+	@cp README.md dist/vps-monitor-$(OS)-$(ARCH)/
+	@cd dist && tar -czf vps-monitor-$(OS)-$(ARCH).tar.gz vps-monitor-$(OS)-$(ARCH)/
+	@echo "Packaged dist/vps-monitor-$(OS)-$(ARCH).tar.gz"
