@@ -1,0 +1,17 @@
+# VPS Monitor Agent 配置
+
+server: "http://127.0.0.1:8080"
+token: "6d1f7a403432190324393c9a85465080"
+interval: 10
+
+disk_paths:
+  - "/"
+  - "/System/Volumes/Data"
+
+services:
+  - name: "localhost-http"
+    type: "http"
+    target: "http://127.0.0.1:8080"
+
+logging:
+  level: "info"

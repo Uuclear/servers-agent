@@ -1,0 +1,40 @@
+# Binaries
+bin/
+*.exe
+
+# Database
+*.db
+
+# Go
+vps-monitor/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build output
+release/
+vps-monitor-release.tar.gz
+
+# Superpowers/brainstorm
+.superpowers/
+
+# Go SDK (if extracted in project)
+go-sdk/

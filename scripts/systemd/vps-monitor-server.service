@@ -1,0 +1,14 @@
+[Unit]
+Description=VPS Monitor Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vps-monitor
+ExecStart=/opt/vps-monitor/bin/vps-monitor-server -config /opt/vps-monitor/config/server.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VPS Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
+        .nav { background: #1976d2; color: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .nav h1 { font-size: 18px; }
+        .nav-links { display: flex; gap: 12px; }
+        .nav-link { color: white; text-decoration: none; font-size: 14px; }
+        .main { display: flex; height: calc(100vh - 48px); }
+        .sidebar { width: 240px; background: white; border-right: 1px solid #ddd; overflow-y: auto; }
+        .sidebar-header { padding: 12px; font-weight: bold; color: #666; border-bottom: 1px solid #eee; }
+        .server-item { padding: 10px 12px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        .server-item:hover { background: #f5f5f5; }
+        .server-item.active { background: #e3f2fd; }
+        .server-status { width: 8px; height: 8px; border-radius: 50%; }
+        .server-status.online { background: #4caf50; }
+        .server-status.offline { background: #9e9e9e; }
+        .server-status.warning { background: #f44336; }
+        .server-info { flex: 1; }
+        .server-name { font-size: 14px; }
+        .server-hostname { font-size: 11px; color: #999; }
+        .server-metrics { font-size: 11px; color: #666; margin-top: 4px; }
+        .content { flex: 1; padding: 20px; overflow-y: auto; }
+        .summary-cards { display: flex; gap: 16px; margin-bottom: 20px; }
+        .card { background: white; border-radius: 8px; padding: 16px; text-align: center; flex: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card-value { font-size: 28px; font-weight: bold; margin-bottom: 4px; }
+        .card-label { font-size: 12px; color: #666; }
+        .card-value.blue { color: #1976d2; }
+        .card-value.green { color: #4caf50; }
+        .card-value.red { color: #f44336; }
+        .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px; }
+        .chart-container { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .chart-title { font-weight: bold; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .chart-wrapper { height: 180px; }
+        .time-selector { display: flex; gap: 8px; }
+        .time-btn { padding: 4px 10px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .time-btn:hover { background: #f5f5f5; }
+        .time-btn.active { background: #1976d2; color: white; border-color: #1976d2; }
+        .disk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .disk-card { background: white; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .disk-path { font-weight: bold; margin-bottom: 8px; }
+        .disk-bar { height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
+        .disk-fill { height: 100%; border-radius: 4px; }
+        .disk-fill.low { background: #4caf50; }
+        .disk-fill.medium { background: #ff9800; }
+        .disk-fill.high { background: #f44336; }
+        .disk-percent { font-size: 14px; margin-top: 4px; }
+        .detail-table { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .detail-title { font-weight: bold; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f5f5f5; font-weight: 500; }
+        .metric-ok { color: #4caf50; }
+        .metric-warn { color: #ff9800; }
+        .metric-error { color: #f44336; }
+        .services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .service-card { background: white; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
+        .service-status { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-bottom: 8px; }
+        .service-status.ok { background: #4caf50; }
+        .service-status.error { background: #f44336; }
+        .service-status.warning { background: #ff9800; }
+        .service-name { font-weight: bold; }
+        .service-response { font-size: 11px; color: #666; }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <h1>VPS Monitor</h1>
+        <div class="nav-links">
+            <a href="#" class="nav-link" onclick="refreshAll()">刷新</a>
+        </div>
+    </nav>
+
+    <div class="main">
+        <aside class="sidebar">
+            <div class="sidebar-header">服务器列表</div>
+            <div id="server-list"></div>
+        </aside>
+
+        <main class="content">
+            <div class="summary-cards">
+                <div class="card">
+                    <div class="card-value blue" id="total-servers">-</div>
+                    <div class="card-label">总服务器</div>
+                </div>
+                <div class="card">
+                    <div class="card-value green" id="online-count">-</div>
+                    <div class="card-label">在线</div>
+                </div>
+                <div class="card">
+                    <div class="card-value red" id="warning-count">-</div>
+                    <div class="card-label">异常</div>
+                </div>
+                <div class="card">
+                    <div class="card-value" id="offline-count">-</div>
+                    <div class="card-label">离线</div>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <div class="chart-title">
+                        <span>CPU 使用率</span>
+                        <div class="time-selector">
+                            <button class="time-btn active" onclick="setTimeRange('1h')">1h</button>
+                            <button class="time-btn" onclick="setTimeRange('6h')">6h</button>
+                            <button class="time-btn" onclick="setTimeRange('24h')">24h</button>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper"><canvas id="cpu-chart"></canvas></div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-title">内存使用率</div>
+                    <div class="chart-wrapper"><canvas id="memory-chart"></canvas></div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-title">Swap 使用率</div>
+                    <div class="chart-wrapper"><canvas id="swap-chart"></canvas></div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-title">系统负载</div>
+                    <div class="chart-wrapper"><canvas id="load-chart"></canvas></div>
+                </div>
+            </div>
+
+            <div id="disk-section"></div>
+
+            <div class="detail-table">
+                <div class="detail-title">服务器详情</div>
+                <table>
+                    <thead><tr><th>服务器</th><th>CPU</th><th>内存</th><th>Swap</th><th>负载</th><th>状态</th></tr></thead>
+                    <tbody id="server-table"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let selectedServerId = null;
+        let currentTimeRange = '1h';
+        let cpuChart, memoryChart, swapChart, loadChart;
+
+        function initCharts() {
+            const options = {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, max: 100 } },
+                plugins: { legend: { display: false } }
+            };
+
+            cpuChart = new Chart(document.getElementById('cpu-chart').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#1976d2', backgroundColor: 'rgba(25,118,210,0.1)', fill: true, tension: 0.4 }] },
+                options: options
+            });
+
+            memoryChart = new Chart(document.getElementById('memory-chart').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#4caf50', backgroundColor: 'rgba(76,175,80,0.1)', fill: true, tension: 0.4 }] },
+                options: options
+            });
+
+            swapChart = new Chart(document.getElementById('swap-chart').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.1)', fill: true, tension: 0.4 }] },
+                options: options
+            });
+
+            loadChart = new Chart(document.getElementById('load-chart').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#9c27b0', backgroundColor: 'rgba(156,39,176,0.1)', fill: true, tension: 0.4 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        async function fetchDashboard() {
+            try {
+                const resp = await fetch('/api/dashboard');
+                const data = await resp.json();
+                document.getElementById('total-servers').textContent = data.summary.total_servers;
+                document.getElementById('online-count').textContent = data.summary.online_count;
+                document.getElementById('warning-count').textContent = data.summary.warning_count;
+                document.getElementById('offline-count').textContent = data.summary.offline_count;
+                renderServerList(data.servers, data.latest_metrics);
+                renderServerTable(data.servers, data.latest_metrics);
+            } catch (e) { console.error('获取数据失败:', e); }
+        }
+
+        function renderServerList(servers, metrics) {
+            const list = document.getElementById('server-list');
+            list.textContent = '';
+            servers.forEach(s => {
+                const div = document.createElement('div');
+                div.className = 'server-item' + (selectedServerId === s.id ? ' active' : '');
+                div.onclick = () => selectServer(s.id);
+
+                const statusClass = s.status === 'online' ? 'online' : s.status === 'warning' ? 'warning' : 'offline';
+                const status = document.createElement('div');
+                status.className = 'server-status ' + statusClass;
+
+                const info = document.createElement('div');
+                info.className = 'server-info';
+
+                const name = document.createElement('div');
+                name.className = 'server-name';
+                name.textContent = s.name || s.hostname;
+
+                const hostname = document.createElement('div');
+                hostname.className = 'server-hostname';
+                hostname.textContent = s.hostname;
+
+                const m = metrics[s.id] || {};
+                const metricsDiv = document.createElement('div');
+                metricsDiv.className = 'server-metrics';
+                if (m.cpu) metricsDiv.textContent = 'CPU: ' + m.cpu.toFixed(0) + '% | Mem: ' + m.memory.toFixed(0) + '%';
+
+                info.appendChild(name);
+                info.appendChild(hostname);
+                info.appendChild(metricsDiv);
+
+                div.appendChild(status);
+                div.appendChild(info);
+                list.appendChild(div);
+            });
+        }
+
+        function renderServerTable(servers, metrics) {
+            const tbody = document.getElementById('server-table');
+            tbody.textContent = '';
+            servers.forEach(s => {
+                const m = metrics[s.id] || {};
+                const tr = document.createElement('tr');
+
+                const cpuClass = m.cpu > 80 ? 'metric-error' : m.cpu > 60 ? 'metric-warn' : 'metric-ok';
+                const memClass = m.memory > 80 ? 'metric-error' : m.memory > 60 ? 'metric-warn' : 'metric-ok';
+                const swapClass = m.swap > 80 ? 'metric-error' : m.swap > 60 ? 'metric-warn' : 'metric-ok';
+
+                const addCell = (text, className) => {
+                    const td = document.createElement('td');
+                    if (className) td.className = className;
+                    td.textContent = text;
+                    tr.appendChild(td);
+                };
+
+                addCell(s.name || s.hostname);
+                addCell(m.cpu ? m.cpu.toFixed(1) + '%' : '-', cpuClass);
+                addCell(m.memory ? m.memory.toFixed(1) + '%' : '-', memClass);
+                addCell(m.swap ? m.swap.toFixed(1) + '%' : '-', swapClass);
+                addCell(m.load1 ? m.load1.toFixed(2) : '-');
+
+                const statusTd = document.createElement('td');
+                const statusSpan = document.createElement('span');
+                statusSpan.className = 'server-status ' + (s.status === 'online' ? 'online' : s.status === 'warning' ? 'warning' : 'offline');
+                statusTd.appendChild(statusSpan);
+                tr.appendChild(statusTd);
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function selectServer(id) {
+            selectedServerId = id;
+            await fetchServerDetail(id);
+            await fetchDashboard();
+        }
+
+        async function fetchServerDetail(id) {
+            try {
+                const resp = await fetch('/api/servers/' + id + '?range=' + currentTimeRange);
+                const data = await resp.json();
+
+                updateChart(cpuChart, data.cpu_history || []);
+                updateChart(memoryChart, data.memory_history || []);
+                updateChart(swapChart, data.swap_history || []);
+                updateChart(loadChart, data.load_history || []);
+
+                renderDiskSection(data.disk_history || {});
+            } catch (e) { console.error('获取详情失败:', e); }
+        }
+
+        function updateChart(chart, history) {
+            const labels = history.map(p => {
+                const d = new Date(p.timestamp);
+                return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+            });
+            const values = history.map(p => p.value);
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = values;
+            chart.update();
+        }
+
+        function renderDiskSection(diskHistory) {
+            const section = document.getElementById('disk-section');
+            section.textContent = '';
+
+            if (Object.keys(diskHistory).length === 0) return;
+
+            const title = document.createElement('div');
+            title.className = 'chart-title';
+            title.style.marginBottom = '12px';
+            title.textContent = '磁盘使用';
+            section.appendChild(title);
+
+            const grid = document.createElement('div');
+            grid.className = 'disk-grid';
+
+            for (const [path, history] of Object.entries(diskHistory)) {
+                const latest = history.length > 0 ? history[history.length - 1].value : 0;
+
+                const card = document.createElement('div');
+                card.className = 'disk-card';
+
+                const pathDiv = document.createElement('div');
+                pathDiv.className = 'disk-path';
+                pathDiv.textContent = path;
+
+                const bar = document.createElement('div');
+                bar.className = 'disk-bar';
+
+                const fill = document.createElement('div');
+                fill.className = 'disk-fill';
+                fill.style.width = latest + '%';
+                if (latest > 80) fill.classList.add('high');
+                else if (latest > 60) fill.classList.add('medium');
+                else fill.classList.add('low');
+
+                bar.appendChild(fill);
+
+                const percent = document.createElement('div');
+                percent.className = 'disk-percent';
+                percent.textContent = latest.toFixed(1) + '%';
+
+                card.appendChild(pathDiv);
+                card.appendChild(bar);
+                card.appendChild(percent);
+                grid.appendChild(card);
+            }
+
+            section.appendChild(grid);
+        }
+
+        function setTimeRange(range) {
+            currentTimeRange = range;
+            document.querySelectorAll('.time-selector .time-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent === range) btn.classList.add('active');
+            });
+            if (selectedServerId) fetchServerDetail(selectedServerId);
+        }
+
+        function refreshAll() {
+            fetchDashboard();
+            if (selectedServerId) fetchServerDetail(selectedServerId);
+        }
+
+        initCharts();
+        fetchDashboard();
+        setInterval(refreshAll, 10000);
+    </script>
+</body>
+</html>
